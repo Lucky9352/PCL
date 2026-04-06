@@ -191,4 +191,7 @@ def analyze_pending_articles(self):
         session.close()
 
     logger.info(f"🔬 Analysis complete: {processed} processed, {failed} failed")
+    if locals().get("raw_articles") and len(raw_articles) == 50:
+        analyze_pending_articles.delay()
+
     return {"processed": processed, "failed": failed}

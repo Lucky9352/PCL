@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
+import re
 from datetime import UTC, datetime
 from typing import Any
 
@@ -26,15 +28,15 @@ CATEGORIES = [
     "automobile",
 ]
 
-# Inshorts internal JSON API
-_API_BASE = "https://inshorts.com/api/en/news"
+# Inshorts base URL
+_API_BASE = "https://inshorts.com/en/read"
 _HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
         "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     ),
-    "Accept": "application/json",
-    "Referer": "https://inshorts.com/en/read/",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.5",
 }
 
 
@@ -55,25 +57,26 @@ async def scrape_inshorts_category(category: str) -> list[dict[str, Any]]:
             follow_redirects=True,
             timeout=30.0,
         ) as client:
-            logger.info(f"Scraping Inshorts category: {category} — {_API_BASE}?category={category}")
+            url = f"{_API_BASE}/{category}"
+            logger.info(f"Scraping Inshorts category: {category} — {url}")
 
-            response = await client.get(
-                _API_BASE,
-                params={
-                    "category": category,
-                    "max_limit": 25,
-                    "include_card_data": "true",
-                },
-            )
+            response = await client.get(url)
             response.raise_for_status()
-            data = response.json()
+            html = response.text
 
-        if data.get("error"):
-            logger.warning(f"Inshorts API returned error for {category}")
+        match = re.search(r"window\.__STATE__\s*=\s*(\{.*?\});?</script>", html, re.DOTALL)
+        if not match:
+            logger.warning(f"Could not find window.__STATE__ for {category}")
             return []
 
-        news_list = data.get("data", {}).get("news_list", [])
-        logger.info(f"API returned {len(news_list)} articles for '{category}'")
+        try:
+            data = json.loads(match.group(1))
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse JSON for {category}: {e}")
+            return []
+
+        news_list = data.get("news_list", {}).get("list", [])
+        logger.info(f"Page returned {len(news_list)} articles for '{category}'")
 
         for item in news_list:
             try:

@@ -37,3 +37,8 @@ local/*
 
 # ML models cache (large, download on demand)
 backend/models_cache/
+
+# Celery
+celerybeat-schedule*
+celerybeat.pid
+*.pid

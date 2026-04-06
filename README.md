@@ -4,8 +4,6 @@
 
 IndiaGround scrapes Indian news from Inshorts, runs each article through a multi-model NLP pipeline (bias detection + fact-checking), and presents a scored reliability result — similar to [Ground News](https://ground.news).
 
-> **Target**: College PCL demo (local deployment). Backend is primary evaluation criterion.
-
 ---
 
 ## Status
