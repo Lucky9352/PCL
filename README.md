@@ -10,7 +10,7 @@ IndiaGround scrapes Indian news from Inshorts, runs each article through a multi
 
 | Phase | Module | Status |
 |-------|--------|--------|
-| 1 | Scraper (Inshorts, 10 categories, Playwright + BS4) | ✅ Done |
+| 1 | Scraper (Inshorts, 10 categories, httpx API) | ✅ Done |
 | 2 | Preprocessing (text clean, spaCy NER, langdetect, semantic dedup) | ✅ Done |
 | 3 | unBIAS Module (VADER + RoBERTa + BART-MNLI + Dbias) | ✅ Done |
 | 4 | ClaimBuster Module (API + heuristic, DuckDuckGo, Google FC, NLI) | ✅ Done |
@@ -36,7 +36,7 @@ IndiaGround scrapes Indian news from Inshorts, runs each article through a multi
 | **TypeScript** | TypeScript | 6.0 |
 | **NLP/ML** | spaCy, VADER, Transformers, Sentence-Transformers, Dbias | Latest |
 | **ML Models** | BART-MNLI, RoBERTa, all-MiniLM-L6-v2 | HuggingFace |
-| **Scraping** | Playwright (headless Chromium) + httpx/BS4 fallback | Latest |
+| **Scraping** | httpx (JSON API) | Latest |
 | **Package Mgmt** | pnpm (frontend), uv (backend) | 10 / 0.11+ |
 
 ---
@@ -49,7 +49,7 @@ IndiaGround scrapes Indian news from Inshorts, runs each article through a multi
 │   (news source)   │  politics, technology, startup, entertainment,
 └────────┬─────────┘  science, automobile)
          │
-         │  Playwright headless / httpx+BS4 fallback
+         │  httpx API client
          ▼
 ┌──────────────────┐       ┌──────────────┐
 │   Celery Beat     │──────▶│   Redis 8     │
@@ -125,7 +125,7 @@ PCL/
 ├── backend/
 │   ├── .python-version          # 3.13
 │   ├── pyproject.toml           # All Python deps + ruff + pytest config
-│   ├── Dockerfile               # Python 3.13 + uv + spaCy + Playwright
+│   ├── Dockerfile               # Python 3.13 + uv + spaCy
 │   ├── .dockerignore
 │   ├── alembic.ini              # DB migration config
 │   ├── alembic/
@@ -158,7 +158,7 @@ PCL/
 │   │   │       ├── stats.py     # GET /stats (full dashboard aggregates)
 │   │   │       └── scrape.py    # POST /scrape/trigger
 │   │   ├── services/
-│   │   │   ├── scraper.py       # Playwright + BS4 Inshorts scraper (286 lines)
+│   │   │   ├── scraper.py       # httpx Inshorts JSON API scraper (189 lines)
 │   │   │   ├── preprocessor.py  # Text clean + spaCy + langdetect + dedup (220 lines)
 │   │   │   ├── unbias.py        # VADER + RoBERTa + BART-MNLI + Dbias (314 lines)
 │   │   │   ├── claimbuster.py   # API + heuristic + DDG + Google FC + NLI (360 lines)
@@ -283,11 +283,7 @@ uv sync --all-groups
 # Download spaCy English model (first time only, ~15MB)
 uv run python -m spacy download en_core_web_sm
 
-# Install Playwright browser (first time only, ~130MB)
-uv run playwright install chromium
-
-# Create database tables (first time, or after model changes)
-uv run alembic revision --autogenerate -m "initial_schema"
+# Apply database migrations
 uv run alembic upgrade head
 
 # Start the API server (auto-reloads on code changes)
@@ -309,7 +305,7 @@ uv run celery -A app.core.celery_app worker -l info -c 2
 
 **What this does:**
 - Listens on Redis for task messages
-- When a scrape is triggered, it runs the Playwright scraper
+- When a scrape is triggered, it runs the API scraper
 - After scraping, automatically runs the full NLP analysis pipeline
 - `-c 2` = 2 concurrent worker threads
 
@@ -379,7 +375,7 @@ curl -X POST http://localhost:8000/api/v1/scrape/trigger
 #    → Aggregating scores...
 #    ✅ Complete: reliability=72.3 bias=0.234 trust=0.789
 
-# 4. List articles (after scrape completes — takes 2-5 min first time)
+# 4. List articles (after scrape completes — usually very fast)
 curl "http://localhost:8000/api/v1/articles?page_size=5" | python3 -m json.tool
 
 # 5. Get article detail (replace {ID} with a real UUID from step 4)
@@ -612,7 +608,7 @@ These are pre-filled in `.env.example` and work with `docker compose up postgres
 
 | Feature | With API Key | Without API Key (default) |
 |---------|-------------|--------------------------|
-| **Scraping** | N/A | ✅ Works (Playwright + BS4) |
+| **Scraping** | N/A | ✅ Works (JSON API) |
 | **Preprocessing** | N/A | ✅ Works (spaCy + langdetect + sentence-transformers) |
 | **Bias Detection** | N/A | ✅ Works (VADER + RoBERTa + BART-MNLI + Dbias — all local models) |
 | **Claim Extraction** | ClaimBuster API (better accuracy) | ✅ **Heuristic fallback** (pattern matching — good enough for demo) |
@@ -629,7 +625,7 @@ These are pre-filled in `.env.example` and work with `docker compose up postgres
 
 ## Known Notes
 
-- **First scrape takes 2-5 minutes** — Playwright renders 10 Inshorts category pages sequentially.
+- **First scrape is very fast** — Uses Inshorts JSON API sequentially.
 - **First analysis downloads ~2.2GB of ML models** — BART-MNLI (~1.6GB), RoBERTa (~500MB), MiniLM (~90MB). Cached at `~/.cache/huggingface` after first download.
 - **All API keys are optional** — the system works without any external API keys.
 
@@ -639,7 +635,6 @@ These are pre-filled in `.env.example` and work with `docker compose up postgres
 
 | Problem | Fix |
 |---------|-----|
-| `Executable doesn't exist` (Playwright) | `cd backend && uv run playwright install chromium` |
 | `spaCy model not found` | `cd backend && uv run python -m spacy download en_core_web_sm` |
 | `connection refused` on port 5432 | PostgreSQL not running — `docker compose up postgres -d` |
 | `connection refused` on port 6379 | Redis not running — `docker compose up redis -d` |

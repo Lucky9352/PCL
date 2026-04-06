@@ -13,7 +13,7 @@ and presents reliability scores via a React dashboard.
 │   Inshorts       │
 │   (10 categories)│
 └────────┬────────┘
-         │ Playwright / httpx + BS4
+         │ httpx API client
          ▼
 ┌─────────────────┐      ┌──────────────┐
 │   Celery Beat    │─────▶│ Redis 8      │
@@ -118,7 +118,7 @@ PCL/
 | Database | PostgreSQL 18 |
 | Frontend | React 19, Vite 8, TailwindCSS v4, Recharts |
 | NLP/ML | spaCy, VADER, Transformers (RoBERTa, BART-MNLI), Sentence-Transformers, Dbias |
-| Scraping | Playwright (Chromium) + httpx/BS4 fallback |
+| Scraping | httpx (JSON API) |
 
 ## Database Schema
 
