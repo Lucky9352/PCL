@@ -1,0 +1,109 @@
+# IndiaGround — Local Dev Stack
+# PostgreSQL 18 + Redis 8 + Celery Worker/Beat
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: indiaground
+      POSTGRES_USER: indiaground
+      POSTGRES_PASSWORD: indiaground
+    ports:
+      - '5432:5432'
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U indiaground -d indiaground']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:8-alpine
+    ports:
+      - '6379:6379'
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: >
+      sh -c "alembic upgrade head &&
+      uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+    environment:
+      APP_ENV: development
+      DEBUG: '1'
+      SECRET_KEY: 5GbP-ssS8uSrOL_i-wsjuQzrB8UGkavKAXgyEx1k-zTomXs0apiZ9ZicmsdTul2vpYVGoSmP6s1qdVSkM0-HxA
+      DATABASE_URL: postgresql+asyncpg://indiaground:indiaground@postgres:5432/indiaground
+      DATABASE_URL_SYNC: postgresql://indiaground:indiaground@postgres:5432/indiaground
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      CORS_ORIGINS: http://localhost:5173,http://localhost:3000
+      ML_DEVICE: auto
+    ports:
+      - '8000:8000'
+    volumes:
+      - ./backend:/app
+      - backend_venv:/app/.venv
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  celery-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: celery -A app.core.celery_app worker -l info -c 2
+    environment:
+      APP_ENV: development
+      DEBUG: '1'
+      SECRET_KEY: 5GbP-ssS8uSrOL_i-wsjuQzrB8UGkavKAXgyEx1k-zTomXs0apiZ9ZicmsdTul2vpYVGoSmP6s1qdVSkM0-HxA
+      DATABASE_URL: postgresql+asyncpg://indiaground:indiaground@postgres:5432/indiaground
+      DATABASE_URL_SYNC: postgresql://indiaground:indiaground@postgres:5432/indiaground
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      ML_DEVICE: cpu
+    volumes:
+      - ./backend:/app
+      - backend_venv:/app/.venv
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  celery-beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: celery -A app.core.celery_app beat -l info
+    environment:
+      APP_ENV: development
+      DEBUG: '1'
+      SECRET_KEY: 5GbP-ssS8uSrOL_i-wsjuQzrB8UGkavKAXgyEx1k-zTomXs0apiZ9ZicmsdTul2vpYVGoSmP6s1qdVSkM0-HxA
+      DATABASE_URL: postgresql+asyncpg://indiaground:indiaground@postgres:5432/indiaground
+      DATABASE_URL_SYNC: postgresql://indiaground:indiaground@postgres:5432/indiaground
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+    volumes:
+      - ./backend:/app
+      - backend_venv:/app/.venv
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  pgdata: {}
+  backend_venv: {}
