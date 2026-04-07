@@ -29,6 +29,8 @@ def sample_bias_result():
         "sentiment": {"score": 0.15, "label": "positive"},
         "bias_types": ["sensationalism"],
         "flagged_tokens": [{"word": "successfully", "suggestion": ""}],
+        "framing": {"primary_frame": "neutral factual reporting", "framing_deviation": 0.2},
+        "political_lean": {"lean_label": "center", "lean_score": 0.0},
         "model_confidence": 0.7,
     }
 
@@ -47,5 +49,11 @@ def sample_factcheck_result():
             }
         ],
         "trust_score": 0.78,
+        "trust_components": {
+            "evidence_trust": 0.9,
+            "source_trust": 0.9,
+            "coverage_score": 1.0,
+            "weights": {"evidence": 0.5, "source": 0.3, "coverage": 0.2},
+        },
         "source_credibility_tier": "high",
     }

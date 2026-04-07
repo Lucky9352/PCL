@@ -18,13 +18,17 @@ class ArticleCard(BaseModel):
     published_at: datetime | None = None
     category: str | None = None
     source_name: str | None = None
+    source_type: str = "inshorts"
     image_url: str | None = None
     reliability_score: float | None = None
     bias_score: float | None = None
     bias_label: str | None = None
+    bias_types: list | None = None
     trust_score: float | None = None
     sentiment_label: str | None = None
+    source_credibility_tier: str | None = None
     analysis_status: str | None = None
+    story_cluster_id: uuid.UUID | None = None
     scraped_at: datetime
 
     model_config = {"from_attributes": True}
@@ -46,6 +50,16 @@ class ArticleDetail(ArticleCard):
     flagged_tokens: list | None = None
     source_credibility_tier: str | None = None
     top_claims: list | None = None
+    # Extended analysis fields
+    framing: dict | None = None
+    political_lean: dict | None = None
+    bias_score_components: dict | None = None
+    trust_score_components: dict | None = None
+    reliability_components: dict | None = None
+    model_confidence: float | None = None
+    story_cluster_id: uuid.UUID | None = None
+    cluster_similarity: float | None = None
+    duplicate_of: uuid.UUID | None = None
     analyzed_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
@@ -66,6 +80,14 @@ class ArticleAnalysis(BaseModel):
     top_claims: list[dict] | None = None
     reliability_score: float | None = None
     analysis_status: str | None = None
+    # Extended
+    framing: dict | None = None
+    political_lean: dict | None = None
+    bias_score_components: dict | None = None
+    trust_score_components: dict | None = None
+    reliability_components: dict | None = None
+    model_confidence: float | None = None
+    story_cluster_id: uuid.UUID | None = None
     analyzed_at: datetime | None = None
 
     model_config = {"from_attributes": True}

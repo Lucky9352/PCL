@@ -47,8 +47,8 @@ class Settings(BaseSettings):
         return [o.strip() for o in self.CORS_ORIGINS.split(",") if o.strip()]
 
     # ── Search APIs ───────────────────────────────
-    SERPAPI_KEY: str = ""
     GOOGLE_FACTCHECK_API_KEY: str = ""
+    NEWSAPI_KEY: str = ""
 
     # ── Scraper ───────────────────────────────────
     SCRAPE_INTERVAL_MINUTES: int = 30

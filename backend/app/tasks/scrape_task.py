@@ -1,4 +1,10 @@
-"""Celery task — periodic Inshorts scraper."""
+"""Celery tasks — multi-source news scraping.
+
+Scrapes from three source types:
+  1. Inshorts (JSON API) — primary, always runs
+  2. RSS feeds (Google News + direct Indian outlets) — always runs, free
+  3. NewsAPI (if NEWSAPI_KEY is set) — optional, free tier 100 req/day
+"""
 
 from __future__ import annotations
 
@@ -23,69 +29,132 @@ def _get_sync_session():
     return SessionLocal()
 
 
+def _insert_articles(session, articles_data: list[dict], source_label: str) -> tuple[int, int]:
+    """Insert articles into DB with dedup. Returns (inserted, skipped)."""
+    from app.db.models import Article
+
+    inserted = 0
+    skipped = 0
+
+    for article_data in articles_data:
+        existing = session.execute(
+            select(Article.id).where(Article.content_hash == article_data["content_hash"])
+        ).scalar_one_or_none()
+
+        if existing:
+            skipped += 1
+            continue
+
+        # Ensure source_type is set
+        if "source_type" not in article_data:
+            article_data["source_type"] = source_label
+
+        article = Article(**article_data)
+        session.add(article)
+        inserted += 1
+
+    session.commit()
+    return inserted, skipped
+
+
 @celery_app.task(name="app.tasks.scrape_task.scrape_inshorts", bind=True, max_retries=3)
 def scrape_inshorts(self):
-    """Scrape all Inshorts categories and store articles.
+    """Scrape all sources and store articles.
 
-    Runs as a Celery periodic task every SCRAPE_INTERVAL_MINUTES.
-    Deduplicates using content_hash before insertion.
+    Despite the task name (kept for backward compatibility with beat schedule),
+    this now runs the full multi-source pipeline:
+      1. Inshorts (always)
+      2. RSS feeds (always, free)
+      3. NewsAPI (if key is set)
     """
-    logger.info("🕷️ Starting Inshorts scrape job")
+    logger.info("🕷️ Starting multi-source scrape job")
+
+    total_inserted = 0
+    total_skipped = 0
+    source_stats: dict[str, dict] = {}
+
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
 
     try:
-        from app.db.models import Article
-        from app.services.scraper import scrape_all_categories
-
-        # Run async scraper in sync context
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        articles_data = loop.run_until_complete(scrape_all_categories())
-        loop.close()
-
-        if not articles_data:
-            logger.warning("No articles scraped")
-            return {"status": "complete", "scraped": 0, "inserted": 0}
-
         session = _get_sync_session()
-        inserted = 0
-        skipped = 0
 
+        # ── Source 1: Inshorts ────────────────────
         try:
-            for article_data in articles_data:
-                # Check for duplicate
-                existing = session.execute(
-                    select(Article.id).where(Article.content_hash == article_data["content_hash"])
-                ).scalar_one_or_none()
+            from app.services.scraper import scrape_all_categories
 
-                if existing:
-                    skipped += 1
-                    continue
+            inshorts_data = loop.run_until_complete(scrape_all_categories())
+            for a in inshorts_data:
+                a.setdefault("source_type", "inshorts")
 
-                article = Article(**article_data)
-                session.add(article)
-                inserted += 1
-
-            session.commit()
-            logger.info(f"✅ Scrape complete: {inserted} inserted, {skipped} duplicates skipped")
-
-            # Trigger analysis for new articles
-            if inserted > 0:
-                try:
-                    from app.tasks.analyze_task import analyze_pending_articles
-
-                    analyze_pending_articles.delay()
-                except Exception as e:
-                    logger.warning(f"Failed to trigger analysis: {e}")
-
+            ins, skip = _insert_articles(session, inshorts_data, "inshorts")
+            total_inserted += ins
+            total_skipped += skip
+            source_stats["inshorts"] = {"scraped": len(inshorts_data), "inserted": ins}
+            logger.info(f"  Inshorts: {ins} inserted, {skip} skipped")
         except Exception as e:
-            session.rollback()
-            logger.error(f"DB error during scrape: {e}")
-            raise
-        finally:
-            session.close()
+            logger.error(f"Inshorts scrape failed: {e}")
+            source_stats["inshorts"] = {"error": str(e)}
 
-        return {"status": "complete", "scraped": len(articles_data), "inserted": inserted}
+        # ── Source 2: RSS feeds ───────────────────
+        try:
+            from app.services.rss_scraper import scrape_all_rss
+
+            rss_data = loop.run_until_complete(scrape_all_rss())
+            ins, skip = _insert_articles(session, rss_data, "rss")
+            total_inserted += ins
+            total_skipped += skip
+            source_stats["rss"] = {"scraped": len(rss_data), "inserted": ins}
+            logger.info(f"  RSS feeds: {ins} inserted, {skip} skipped")
+        except Exception as e:
+            logger.error(f"RSS scrape failed: {e}")
+            source_stats["rss"] = {"error": str(e)}
+
+        # ── Source 3: NewsAPI (optional) ──────────
+        try:
+            from app.core import get_settings
+
+            settings = get_settings()
+            if settings.NEWSAPI_KEY:
+                from app.services.newsapi_scraper import scrape_newsapi_headlines
+
+                newsapi_data = loop.run_until_complete(scrape_newsapi_headlines())
+                ins, skip = _insert_articles(session, newsapi_data, "newsapi")
+                total_inserted += ins
+                total_skipped += skip
+                source_stats["newsapi"] = {"scraped": len(newsapi_data), "inserted": ins}
+                logger.info(f"  NewsAPI: {ins} inserted, {skip} skipped")
+            else:
+                source_stats["newsapi"] = {"skipped": "no API key"}
+        except Exception as e:
+            logger.error(f"NewsAPI scrape failed: {e}")
+            source_stats["newsapi"] = {"error": str(e)}
+
+        session.close()
+
+        logger.info(
+            f"✅ Multi-source scrape complete: {total_inserted} inserted, "
+            f"{total_skipped} duplicates skipped"
+        )
+
+        # Trigger analysis for new articles
+        if total_inserted > 0:
+            try:
+                from app.tasks.analyze_task import analyze_pending_articles
+
+                analyze_pending_articles.delay()
+            except Exception as e:
+                logger.warning(f"Failed to trigger analysis: {e}")
+
+        return {
+            "status": "complete",
+            "total_inserted": total_inserted,
+            "total_skipped": total_skipped,
+            "sources": source_stats,
+        }
 
     except Exception as e:
         logger.error(f"Scrape task failed: {e}")
         raise self.retry(exc=e, countdown=60) from e
+    finally:
+        loop.close()

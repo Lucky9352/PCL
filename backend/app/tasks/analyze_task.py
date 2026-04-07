@@ -38,6 +38,7 @@ def analyze_pending_articles(self):
         compute_embedding,
         preprocess_article,
     )
+    from app.services.story_cluster_sync import assign_article_to_cluster
     from app.services.unbias import analyze_bias
 
     logger.info("🔬 Starting analysis pipeline for pending articles")
@@ -120,7 +121,7 @@ def analyze_pending_articles(self):
 
                 # ── Step 3: Bias analysis ──────────
                 logger.info("  → Running bias analysis...")
-                bias_result = analyze_bias(article.title, article.synopsis)
+                bias_result = analyze_bias(article.title, article.synopsis, article.source_name)
 
                 # Log analysis run
                 bias_run = AnalysisRun(
@@ -165,8 +166,17 @@ def analyze_pending_articles(self):
                 article.top_claims = final["top_claims"]
                 article.reliability_score = final["reliability_score"]
                 article.analysis_status = final["analysis_status"]
+                # Extended analysis fields
+                article.framing = final.get("framing")
+                article.political_lean = final.get("political_lean")
+                article.bias_score_components = final.get("bias_score_components")
+                article.trust_score_components = final.get("trust_score_components")
+                article.reliability_components = final.get("reliability_components")
+                article.model_confidence = final.get("model_confidence")
                 article.status = "analyzed"
                 article.analyzed_at = datetime.now(UTC)
+
+                assign_article_to_cluster(session, article)
 
                 session.commit()
                 processed += 1

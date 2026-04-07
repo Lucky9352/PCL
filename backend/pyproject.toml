@@ -9,20 +9,16 @@ dependencies = [
     "uvicorn[standard]>=0.34.0",
     "pydantic>=2.11.0",
     "pydantic-settings>=2.9.0",
-
     # --- Database ---
     "sqlalchemy[asyncio]>=2.0.40",
     "asyncpg>=0.30.0",
     "psycopg2-binary>=2.9.10",
     "alembic>=1.15.0",
-
     # --- Celery + Redis ---
     "celery>=5.5.0",
     "redis>=5.3.0",
-
     # --- Scraping ---
     "httpx>=0.28.0",
-
     # --- NLP / ML ---
     "spacy>=3.8.0",
     "en-core-web-sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl",
@@ -31,19 +27,21 @@ dependencies = [
     "transformers>=4.52.0",
     "torch>=2.7.0",
     "vaderSentiment>=3.3.2",
-
     # --- Fact-checking ---
-    "duckduckgo-search>=8.0.0",
-
+    "ddgs>=9.13.0",
+    "duckduckgo-search>=8.1.1",
+    # --- Multi-source ingestion ---
+    "feedparser>=6.0.0",
+    "trafilatura>=2.0.0",
     # --- Logging ---
     "loguru>=0.7.0",
-
     # --- Rate limiting ---
     "slowapi>=0.1.9",
-
     # --- Utilities ---
     "python-dotenv>=1.1.0",
     "uuid-utils>=0.14.1",
+    "numpy>=2.0.0",
+    "scikit-learn>=1.6.0",
 ]
 
 [dependency-groups]

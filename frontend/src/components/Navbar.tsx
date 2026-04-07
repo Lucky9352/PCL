@@ -1,11 +1,13 @@
 import { Link, useLocation } from "react-router-dom";
-import { Shield, BarChart3, Grid3X3, Home } from "lucide-react";
+import { BarChart3, Grid3X3, Home, Layers, BookOpen } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const NAV_ITEMS = [
   { path: "/", label: "Feed", icon: Home },
+  { path: "/stories", label: "Stories", icon: Layers },
   { path: "/categories", label: "Categories", icon: Grid3X3 },
   { path: "/dashboard", label: "Dashboard", icon: BarChart3 },
+  { path: "/methodology", label: "How It Works", icon: BookOpen },
 ];
 
 export default function Navbar() {
@@ -14,40 +16,22 @@ export default function Navbar() {
   return (
     <nav className="fixed top-0 left-0 right-0 z-50 glass">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16">
-          {/* Logo */}
-          <Link to="/" className="flex items-center gap-3 group">
-            <div
-              className="w-9 h-9 rounded-lg flex items-center justify-center transition-all duration-300 group-hover:scale-110"
-              style={{
-                background: "var(--gradient-hero)",
-                boxShadow: "0 0 20px var(--color-accent-glow)",
-              }}
-            >
-              <Shield className="w-5 h-5 text-white" />
+        <div className="flex items-center justify-between h-14">
+          <Link to="/" className="flex items-center gap-2.5 group">
+            <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-accent">
+              <span className="text-white text-sm font-black tracking-tight">IG</span>
             </div>
             <div className="flex flex-col">
-              <span
-                className="text-lg font-bold leading-tight"
-                style={{
-                  background: "var(--gradient-hero)",
-                  WebkitBackgroundClip: "text",
-                  WebkitTextFillColor: "transparent",
-                }}
-              >
+              <span className="text-sm font-bold leading-none tracking-tight text-text-primary">
                 IndiaGround
               </span>
-              <span
-                className="text-[10px] leading-tight tracking-widest uppercase"
-                style={{ color: "var(--color-text-muted)" }}
-              >
-                News Bias & Fact Check
+              <span className="text-[9px] leading-tight tracking-widest uppercase text-(--color-text-muted)">
+                News Analysis
               </span>
             </div>
           </Link>
 
-          {/* Nav links */}
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-0.5">
             {NAV_ITEMS.map((item) => {
               const isActive = location.pathname === item.path;
               const Icon = item.icon;
@@ -56,18 +40,13 @@ export default function Navbar() {
                   key={item.path}
                   to={item.path}
                   className={cn(
-                    "flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200",
-                    isActive ? "text-white" : "hover:text-white",
+                    "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors duration-150",
+                    isActive
+                      ? "text-accent bg-accent-muted"
+                      : "text-text-secondary hover:text-text-primary hover:bg-bg-hover",
                   )}
-                  style={{
-                    color: isActive ? "var(--color-text-primary)" : "var(--color-text-secondary)",
-                    background: isActive ? "rgba(99, 102, 241, 0.15)" : "transparent",
-                    border: isActive
-                      ? "1px solid rgba(99, 102, 241, 0.3)"
-                      : "1px solid transparent",
-                  }}
                 >
-                  <Icon className="w-4 h-4" />
+                  <Icon className="w-3.5 h-3.5" />
                   <span className="hidden sm:inline">{item.label}</span>
                 </Link>
               );

@@ -17,6 +17,7 @@ celery_app = Celery(
         "app.tasks.scrape_task",
         "app.tasks.analyze_task",
         "app.tasks.cleanup_task",
+        "app.tasks.cluster_task",
     ],
 )
 
@@ -35,12 +36,16 @@ celery_app.autodiscover_tasks(["app.tasks"])
 
 # Periodic beat schedule
 celery_app.conf.beat_schedule = {
-    "scrape-inshorts-periodic": {
+    "scrape-all-sources-periodic": {
         "task": "app.tasks.scrape_task.scrape_inshorts",
         "schedule": crontab(minute=f"*/{settings.SCRAPE_INTERVAL_MINUTES}"),
     },
+    "analyze-pending-periodic": {
+        "task": "app.tasks.analyze_task.analyze_pending_articles",
+        "schedule": crontab(minute="*/10"),
+    },
     "cleanup-archive-old-articles": {
         "task": "app.tasks.cleanup_task.archive_old_articles",
-        "schedule": crontab(hour=2, minute=0),  # 2 AM daily
+        "schedule": crontab(hour=2, minute=0),
     },
 }

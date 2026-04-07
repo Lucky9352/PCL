@@ -46,6 +46,8 @@ services:
       CELERY_RESULT_BACKEND: redis://redis:6379/0
       CORS_ORIGINS: http://localhost:5173,http://localhost:3000
       ML_DEVICE: auto
+      NEWSAPI_KEY: ${NEWSAPI_KEY:-}
+      GOOGLE_FACTCHECK_API_KEY: ${GOOGLE_FACTCHECK_API_KEY:-}
     ports:
       - '8000:8000'
     volumes:
@@ -72,6 +74,8 @@ services:
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/0
       ML_DEVICE: cpu
+      NEWSAPI_KEY: ${NEWSAPI_KEY:-}
+      GOOGLE_FACTCHECK_API_KEY: ${GOOGLE_FACTCHECK_API_KEY:-}
     volumes:
       - ./backend:/app
       - backend_venv:/app/.venv

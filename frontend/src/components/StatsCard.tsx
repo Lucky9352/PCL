@@ -9,44 +9,24 @@ interface Props {
 
 export default function StatsCard({ title, value, subtitle, icon, color, glowColor }: Props) {
   return (
-    <div
-      className="relative rounded-2xl p-6 transition-all duration-300 hover:-translate-y-1"
-      style={{
-        background: "var(--color-bg-card)",
-        boxShadow: "var(--shadow-card)",
-        border: "1px solid var(--color-border)",
-      }}
-    >
-      {/* Glow accent */}
+    <div className="relative rounded-xl p-5 bg-bg-card border border-border transition-all duration-200 hover:border-border-hover">
       <div
-        className="absolute top-0 left-0 right-0 h-1 rounded-t-2xl"
+        className="absolute top-0 left-0 right-0 h-0.5 rounded-t-xl"
         style={{ background: color }}
       />
-
       <div className="flex items-start justify-between">
         <div>
-          <p
-            className="text-xs font-medium uppercase tracking-wider mb-2"
-            style={{ color: "var(--color-text-muted)" }}
-          >
+          <p className="text-[11px] font-medium uppercase tracking-wider mb-1.5 text-(--color-text-muted)">
             {title}
           </p>
-          <p className="text-3xl font-bold" style={{ color }}>
+          <p className="text-2xl font-bold tabular-nums" style={{ color }}>
             {value}
           </p>
-          {subtitle && (
-            <p className="text-xs mt-1" style={{ color: "var(--color-text-secondary)" }}>
-              {subtitle}
-            </p>
-          )}
+          {subtitle && <p className="text-[11px] mt-0.5 text-text-secondary">{subtitle}</p>}
         </div>
-
         <div
-          className="w-12 h-12 rounded-xl flex items-center justify-center"
-          style={{
-            background: glowColor,
-            boxShadow: `0 0 20px ${glowColor}`,
-          }}
+          className="w-10 h-10 rounded-lg flex items-center justify-center"
+          style={{ background: glowColor }}
         >
           {icon}
         </div>

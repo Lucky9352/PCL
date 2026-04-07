@@ -11,7 +11,7 @@ from app.core import get_settings
 from app.db.base import Base
 
 # Import all models so Base.metadata knows about them
-from app.db.models import AnalysisRun, ArchivedArticle, Article, Source  # noqa: F401
+from app.db.models import AnalysisRun, ArchivedArticle, Article, Source, StoryCluster  # noqa: F401
 
 config = context.config
 

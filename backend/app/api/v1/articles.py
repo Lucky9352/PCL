@@ -20,6 +20,30 @@ from app.schemas.article import (
 router = APIRouter(prefix="/articles")
 
 
+def _base_filter(
+    query,
+    category: str | None,
+    bias: str | None,
+    trust_min: float | None,
+    status: str | None,
+    search: str | None,
+):
+    """Apply shared filters used by both the list query and the count query."""
+    query = query.where(Article.is_duplicate.is_(False) | Article.is_duplicate.is_(None))
+    if category:
+        query = query.where(Article.category == category)
+    if bias:
+        query = query.where(Article.bias_label == bias)
+    if trust_min is not None:
+        query = query.where(Article.trust_score >= trust_min)
+    if status:
+        query = query.where(Article.status == status)
+    if search:
+        term = f"%{search}%"
+        query = query.where(Article.title.ilike(term) | Article.synopsis.ilike(term))
+    return query
+
+
 @router.get("", response_model=ArticleListResponse)
 async def list_articles(
     page_size: int = Query(default=20, ge=1, le=100, description="Items per page"),
@@ -32,22 +56,8 @@ async def list_articles(
     db: AsyncSession = Depends(get_db),
 ):
     """List articles with cursor-based pagination and filters."""
-    query = select(Article).where(Article.is_duplicate.is_(False) | Article.is_duplicate.is_(None))
+    query = _base_filter(select(Article), category, bias, trust_min, status, search)
 
-    # Apply filters
-    if category:
-        query = query.where(Article.category == category)
-    if bias:
-        query = query.where(Article.bias_label == bias)
-    if trust_min is not None:
-        query = query.where(Article.trust_score >= trust_min)
-    if status:
-        query = query.where(Article.status == status)
-    if search:
-        search_term = f"%{search}%"
-        query = query.where(Article.title.ilike(search_term) | Article.synopsis.ilike(search_term))
-
-    # Cursor-based pagination using scraped_at + id
     if cursor:
         try:
             cursor_id = uuid.UUID(cursor)
@@ -60,9 +70,8 @@ async def list_articles(
         except (ValueError, AttributeError):
             raise HTTPException(status_code=400, detail="Invalid cursor") from None
 
-    # Order by newest first
     query = query.order_by(Article.scraped_at.desc(), Article.id.desc())
-    query = query.limit(page_size + 1)  # Fetch one extra to check has_more
+    query = query.limit(page_size + 1)
 
     result = await db.execute(query)
     articles = list(result.scalars().all())
@@ -71,10 +80,9 @@ async def list_articles(
     if has_more:
         articles = articles[:page_size]
 
-    # Get total count (cached for performance)
-    count_query = select(func.count(Article.id))
-    if category:
-        count_query = count_query.where(Article.category == category)
+    count_query = _base_filter(
+        select(func.count(Article.id)), category, bias, trust_min, status, search
+    )
     total_result = await db.execute(count_query)
     total_count = total_result.scalar()
 
@@ -126,19 +134,5 @@ async def get_article_analysis(
 
     return {
         "success": True,
-        "data": ArticleAnalysis(
-            article_id=article.id,
-            bias_score=article.bias_score,
-            bias_label=article.bias_label,
-            sentiment_score=article.sentiment_score,
-            sentiment_label=article.sentiment_label,
-            bias_types=article.bias_types,
-            flagged_tokens=article.flagged_tokens,
-            trust_score=article.trust_score,
-            source_credibility_tier=article.source_credibility_tier,
-            top_claims=article.top_claims,
-            reliability_score=article.reliability_score,
-            analysis_status=article.analysis_status,
-            analyzed_at=article.analyzed_at,
-        ),
+        "data": ArticleAnalysis.model_validate(article),
     }

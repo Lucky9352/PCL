@@ -43,4 +43,9 @@ celerybeat-schedule*
 celerybeat.pid
 *.pid
 
+# Evaluation run outputs (regenerate with uv run python -m evaluation.run_all)
+backend/evaluation_report.json
+backend/evaluation_report.md
+backend/evaluation_tokens.json
+
 1.txt

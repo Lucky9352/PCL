@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import Article, get_db
 from app.schemas.stats import CategoryStats, DashboardStats, SourceStats
+from app.utils.source_credibility import get_source_credibility
 
 router = APIRouter()
 
@@ -82,6 +83,7 @@ async def get_dashboard_stats(db: AsyncSession = Depends(get_db)):
         SourceStats(
             source_name=row.source_name,
             count=row.count,
+            credibility_tier=get_source_credibility(row.source_name or "")["tier"],
             avg_reliability_score=round(float(row.avg_reliability), 3)
             if row.avg_reliability
             else None,
@@ -98,14 +100,15 @@ async def get_dashboard_stats(db: AsyncSession = Depends(get_db)):
     bias_dist_result = await db.execute(bias_dist_query)
     bias_distribution = {row[0]: row[1] for row in bias_dist_result.all()}
 
-    # Trust distribution (buckets: 0-0.2, 0.2-0.4, 0.4-0.6, 0.6-0.8, 0.8-1.0)
+    # Trust distribution — half-open intervals [lo, hi) except last bucket [0.8, 1.0]
+    t = Article.trust_score
     trust_dist_query = select(
-        func.count(case((Article.trust_score.between(0, 0.2), 1))).label("very_low"),
-        func.count(case((Article.trust_score.between(0.2, 0.4), 1))).label("low"),
-        func.count(case((Article.trust_score.between(0.4, 0.6), 1))).label("medium"),
-        func.count(case((Article.trust_score.between(0.6, 0.8), 1))).label("high"),
-        func.count(case((Article.trust_score.between(0.8, 1.0), 1))).label("very_high"),
-    ).where(Article.trust_score.isnot(None))
+        func.count(case(((t >= 0) & (t < 0.2), 1))).label("very_low"),
+        func.count(case(((t >= 0.2) & (t < 0.4), 1))).label("low"),
+        func.count(case(((t >= 0.4) & (t < 0.6), 1))).label("medium"),
+        func.count(case(((t >= 0.6) & (t < 0.8), 1))).label("high"),
+        func.count(case(((t >= 0.8) & (t <= 1.0), 1))).label("very_high"),
+    ).where(t.isnot(None))
     trust_dist_result = await db.execute(trust_dist_query)
     trust_row = trust_dist_result.one()
     trust_distribution = {

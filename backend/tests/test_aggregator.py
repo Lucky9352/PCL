@@ -6,91 +6,153 @@ from app.services.aggregator import aggregate_analysis, compute_reliability_scor
 
 
 class TestComputeReliabilityScore:
-    """Tests for the reliability score formula."""
+    """Tests for the reliability score formula.
+
+    Formula (v2.0):
+      R = [(1-B)×0.35 + T×0.35 + (1-S)×0.15 + (1-F)×0.15] × 100
+    """
 
     def test_perfect_article(self):
-        """No bias, fully trustworthy, no sensationalism → 100."""
-        score = compute_reliability_score(
-            bias_score=0.0,
-            trust_score=1.0,
-            bias_types=[],
+        """No bias, fully trustworthy, no sensationalism, no framing deviation → 100."""
+        result = compute_reliability_score(
+            bias_score=0.0, trust_score=1.0, bias_types=[], framing_deviation=0.0
         )
-        assert score == 100.0
+        assert result["score"] == 100.0
 
     def test_worst_article(self):
-        """Max bias, no trust, sensationalism + loaded language → ~0."""
-        score = compute_reliability_score(
+        """Max bias, no trust, sensationalism, max framing deviation → near 0."""
+        result = compute_reliability_score(
             bias_score=1.0,
             trust_score=0.0,
             bias_types=["sensationalism", "loaded language"],
+            framing_deviation=1.0,
         )
-        assert score == pytest.approx(6.0, abs=1.0)
+        assert result["score"] == pytest.approx(4.5, abs=1.0)
 
     def test_balanced_article(self):
         """Moderate bias and trust → middle range."""
-        score = compute_reliability_score(
+        result = compute_reliability_score(
             bias_score=0.3,
             trust_score=0.7,
             bias_types=[],
+            framing_deviation=0.0,
         )
-        # (1-0.3)*0.4 + 0.7*0.4 + (1-0)*0.2 = 0.28 + 0.28 + 0.20 = 0.76 → 76.0
-        assert score == pytest.approx(76.0, abs=0.1)
+        # (1-0.3)*0.35 + 0.7*0.35 + (1-0)*0.15 + (1-0)*0.15
+        # = 0.245 + 0.245 + 0.15 + 0.15 = 0.79 → 79.0
+        assert result["score"] == pytest.approx(79.0, abs=0.1)
 
     def test_biased_but_trustworthy(self):
         """High bias but factually accurate."""
-        score = compute_reliability_score(
+        result = compute_reliability_score(
             bias_score=0.8,
             trust_score=0.9,
             bias_types=[],
+            framing_deviation=0.0,
         )
-        # (1-0.8)*0.4 + 0.9*0.4 + 1.0*0.2 = 0.08 + 0.36 + 0.20 = 0.64 → 64.0
-        assert score == pytest.approx(64.0, abs=0.1)
+        # (1-0.8)*0.35 + 0.9*0.35 + 1.0*0.15 + 1.0*0.15
+        # = 0.07 + 0.315 + 0.15 + 0.15 = 0.685 → 68.5
+        assert result["score"] == pytest.approx(68.5, abs=0.1)
 
     def test_unbiased_but_untrustworthy(self):
         """Low bias but questionable facts."""
-        score = compute_reliability_score(
+        result = compute_reliability_score(
             bias_score=0.1,
             trust_score=0.2,
             bias_types=[],
+            framing_deviation=0.0,
         )
-        # (1-0.1)*0.4 + 0.2*0.4 + 1.0*0.2 = 0.36 + 0.08 + 0.20 = 0.64 → 64.0
-        assert score == pytest.approx(64.0, abs=0.1)
+        # (1-0.1)*0.35 + 0.2*0.35 + 1.0*0.15 + 1.0*0.15
+        # = 0.315 + 0.07 + 0.15 + 0.15 = 0.685 → 68.5
+        assert result["score"] == pytest.approx(68.5, abs=0.1)
 
     def test_sensationalism_penalty(self):
         """Sensationalism should reduce score."""
-        score_no_sens = compute_reliability_score(
+        result_no_sens = compute_reliability_score(
             bias_score=0.3,
             trust_score=0.7,
             bias_types=[],
+            framing_deviation=0.0,
         )
-        score_sens = compute_reliability_score(
+        result_sens = compute_reliability_score(
             bias_score=0.3,
             trust_score=0.7,
             bias_types=["sensationalism"],
+            framing_deviation=0.0,
         )
-        assert score_sens < score_no_sens
+        assert result_sens["score"] < result_no_sens["score"]
 
     def test_loaded_language_penalty(self):
         """Loaded language should reduce score."""
-        score_clean = compute_reliability_score(
+        result_clean = compute_reliability_score(
             bias_score=0.3,
             trust_score=0.7,
             bias_types=[],
+            framing_deviation=0.0,
         )
-        score_loaded = compute_reliability_score(
+        result_loaded = compute_reliability_score(
             bias_score=0.3,
             trust_score=0.7,
             bias_types=["loaded language"],
+            framing_deviation=0.0,
         )
-        assert score_loaded < score_clean
+        assert result_loaded["score"] < result_clean["score"]
+
+    def test_framing_deviation_penalty(self):
+        """Higher framing deviation should reduce score."""
+        result_neutral = compute_reliability_score(
+            bias_score=0.3,
+            trust_score=0.7,
+            bias_types=[],
+            framing_deviation=0.0,
+        )
+        result_biased = compute_reliability_score(
+            bias_score=0.3,
+            trust_score=0.7,
+            bias_types=[],
+            framing_deviation=0.8,
+        )
+        assert result_biased["score"] < result_neutral["score"]
 
     def test_score_bounds(self):
         """Score should always be between 0 and 100."""
         for bias in [0.0, 0.5, 1.0]:
             for trust in [0.0, 0.5, 1.0]:
                 for types in [[], ["sensationalism"], ["loaded language"]]:
-                    score = compute_reliability_score(bias, trust, types)
-                    assert 0.0 <= score <= 100.0
+                    for frame in [0.0, 0.5, 1.0]:
+                        result = compute_reliability_score(bias, trust, types, frame)
+                        assert 0.0 <= result["score"] <= 100.0
+
+    def test_result_includes_components(self):
+        """Result dict should include component breakdown."""
+        result = compute_reliability_score(
+            bias_score=0.5,
+            trust_score=0.5,
+            bias_types=[],
+            framing_deviation=0.5,
+        )
+        assert "components" in result
+        assert "weights" in result
+        assert "raw_inputs" in result
+
+    def test_symmetry_bias_trust(self):
+        """Bias and trust have equal weight — swapping should produce equal effect."""
+        result_a = compute_reliability_score(
+            bias_score=0.2,
+            trust_score=0.8,
+            bias_types=[],
+            framing_deviation=0.0,
+        )
+        result_b = compute_reliability_score(
+            bias_score=0.8,
+            trust_score=0.2,
+            bias_types=[],
+            framing_deviation=0.0,
+        )
+        # Both should center around the same midpoint since W_bias == W_trust
+        # Midpoint = (0.35 × avg_inv_bias + 0.35 × avg_trust + 0.30_constant) × 100
+        # = (0.35*0.5 + 0.35*0.5 + 0.30) * 100 = 65.0
+        mid = (result_a["score"] + result_b["score"]) / 2
+        assert mid == pytest.approx(65.0, abs=0.1)
 
 
 class TestAggregateAnalysis:
@@ -111,6 +173,9 @@ class TestAggregateAnalysis:
         assert "top_claims" in result
         assert "reliability_score" in result
         assert result["analysis_status"] == "complete"
+        # New fields in v2
+        assert "reliability_components" in result
+        assert "model_confidence" in result
 
     def test_reliability_score_range(self, sample_bias_result, sample_factcheck_result):
         """Reliability score should be 0-100."""

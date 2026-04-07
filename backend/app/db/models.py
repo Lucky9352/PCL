@@ -10,6 +10,7 @@ from sqlalchemy import (
     Float,
     ForeignKey,
     Index,
+    Integer,
     String,
     Text,
     func,
@@ -36,6 +37,9 @@ class Article(Base):
     inshorts_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     image_url: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # Multi-source tracking: inshorts | newsapi | rss
+    source_type: Mapped[str] = mapped_column(String(20), nullable=False, default="inshorts")
+
     # Deduplication key — SHA-256(title + published_at)
     content_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
 
@@ -57,14 +61,28 @@ class Article(Base):
     bias_types: Mapped[list | None] = mapped_column(JSONB, nullable=True)
     flagged_tokens: Mapped[list | None] = mapped_column(JSONB, nullable=True)
 
+    # ── Extended bias analysis ────────────────────
+    framing: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    political_lean: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    bias_score_components: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+
     # ── Fact-check analysis (ClaimBuster module) ──
     trust_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     source_credibility_tier: Mapped[str | None] = mapped_column(String(20), nullable=True)
     top_claims: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    trust_score_components: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
     # ── Aggregated reliability score ──────────────
     reliability_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    reliability_components: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    model_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
     analysis_status: Mapped[str | None] = mapped_column(String(20), nullable=True, default=None)
+
+    # ── Story clustering ──────────────────────────
+    story_cluster_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("story_clusters.id", ondelete="SET NULL"), nullable=True
+    )
+    cluster_similarity: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     # ── Timestamps ────────────────────────────────
     scraped_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -78,6 +96,7 @@ class Article(Base):
     analysis_runs: Mapped[list[AnalysisRun]] = relationship(
         back_populates="article", cascade="all, delete-orphan"
     )
+    story_cluster: Mapped[StoryCluster | None] = relationship(back_populates="articles")
 
     __table_args__ = (
         Index("ix_articles_category", "category"),
@@ -85,6 +104,40 @@ class Article(Base):
         Index("ix_articles_published_at", "published_at"),
         Index("ix_articles_reliability_score", "reliability_score"),
         Index("ix_articles_scraped_at", "scraped_at"),
+        Index("ix_articles_source_type", "source_type"),
+        Index("ix_articles_story_cluster_id", "story_cluster_id"),
+    )
+
+
+class StoryCluster(Base):
+    """Groups articles about the same event from different sources."""
+
+    __tablename__ = "story_clusters"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    representative_title: Mapped[str] = mapped_column(Text, nullable=False)
+    category: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    article_count: Mapped[int] = mapped_column(Integer, default=1)
+
+    # Cross-source analysis (computed by story_cluster service)
+    source_diversity: Mapped[float | None] = mapped_column(Float, nullable=True)
+    bias_spectrum: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    avg_reliability_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    avg_trust_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    unique_sources: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    # Mean MiniLM embedding (list[float]) for incremental assignment
+    centroid_embedding: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    articles: Mapped[list[Article]] = relationship(back_populates="story_cluster")
+
+    __table_args__ = (
+        Index("ix_story_clusters_category", "category"),
+        Index("ix_story_clusters_created_at", "created_at"),
     )
 
 
@@ -103,6 +156,7 @@ class ArchivedArticle(Base):
     source_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     inshorts_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     image_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source_type: Mapped[str] = mapped_column(String(20), nullable=False, default="inshorts")
     content_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="raw")
     entities: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
@@ -116,11 +170,19 @@ class ArchivedArticle(Base):
     sentiment_label: Mapped[str | None] = mapped_column(String(20), nullable=True)
     bias_types: Mapped[list | None] = mapped_column(JSONB, nullable=True)
     flagged_tokens: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    framing: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    political_lean: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    bias_score_components: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     trust_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     source_credibility_tier: Mapped[str | None] = mapped_column(String(20), nullable=True)
     top_claims: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    trust_score_components: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     reliability_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    reliability_components: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    model_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
     analysis_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    story_cluster_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    cluster_similarity: Mapped[float | None] = mapped_column(Float, nullable=True)
     scraped_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     analyzed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
