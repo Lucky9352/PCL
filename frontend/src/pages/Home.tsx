@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery } from "@tanstack/react-query";
 import { fetchArticles, triggerScrape } from "@/api/client";
 import ArticleCard from "@/components/ArticleCard";
 import { Search, RefreshCw, Loader2 } from "lucide-react";
@@ -21,15 +21,22 @@ export default function Home() {
   const [searchInput, setSearchInput] = useState("");
   const [isScraping, setIsScraping] = useState(false);
 
-  const { data, isLoading, error, refetch } = useQuery({
-    queryKey: ["articles", category, search],
-    queryFn: () =>
-      fetchArticles({
-        page_size: 30,
-        category: category || undefined,
-        search: search || undefined,
-      }),
-  });
+  const { data, isLoading, error, fetchNextPage, hasNextPage, isFetchingNextPage, refetch } =
+    useInfiniteQuery({
+      queryKey: ["articles", category, search],
+      queryFn: ({ pageParam }) =>
+        fetchArticles({
+          page_size: 30,
+          cursor: (pageParam as string) || undefined,
+          category: category || undefined,
+          search: search || undefined,
+        }),
+      initialPageParam: undefined,
+      getNextPageParam: (lastPage) => lastPage.meta.next_cursor ?? undefined,
+    });
+
+  const allArticles = data?.pages.flatMap((page) => page.data) ?? [];
+  const totalCount = data?.pages[0]?.meta.total_count ?? 0;
 
   const handleScrape = async () => {
     setIsScraping(true);
@@ -163,7 +170,7 @@ export default function Home() {
             Retry
           </button>
         </div>
-      ) : data?.data.length === 0 ? (
+      ) : allArticles.length === 0 ? (
         <div
           className="text-center py-20 rounded-2xl"
           style={{ background: "var(--color-bg-card)" }}
@@ -178,19 +185,40 @@ export default function Home() {
       ) : (
         <>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 stagger-children">
-            {data?.data.map((article, i) => (
+            {allArticles.map((article, i) => (
               <ArticleCard key={article.id} article={article} index={i} />
             ))}
           </div>
 
-          {/* Pagination info */}
-          {data?.meta && (
-            <div className="mt-8 text-center">
-              <p className="text-sm" style={{ color: "var(--color-text-muted)" }}>
-                Showing {data.data.length} of {data.meta.total_count ?? "?"} articles
-              </p>
-            </div>
-          )}
+          {/* Pagination info and Load More */}
+          <div className="mt-12 flex flex-col items-center gap-4">
+            <p className="text-sm" style={{ color: "var(--color-text-muted)" }}>
+              Showing {allArticles.length} of {totalCount} articles
+            </p>
+
+            {hasNextPage && (
+              <button
+                onClick={() => fetchNextPage()}
+                disabled={isFetchingNextPage}
+                className="px-8 py-3 rounded-xl text-sm font-semibold transition-all duration-200 hover:scale-105 disabled:opacity-50 disabled:hover:scale-100"
+                style={{
+                  background: "var(--color-bg-card)",
+                  color: "var(--color-accent)",
+                  border: "1px solid var(--color-border)",
+                  boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
+                }}
+              >
+                {isFetchingNextPage ? (
+                  <div className="flex items-center gap-2">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Loading more...</span>
+                  </div>
+                ) : (
+                  "Show More Articles"
+                )}
+              </button>
+            )}
+          </div>
         </>
       )}
     </div>
