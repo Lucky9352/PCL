@@ -12,8 +12,8 @@ IndiaGround scrapes Indian news from Inshorts, runs each article through a multi
 |-------|--------|--------|
 | 1 | Scraper (Inshorts, 10 categories, httpx API) | ✅ Done |
 | 2 | Preprocessing (text clean, spaCy NER, langdetect, semantic dedup) | ✅ Done |
-| 3 | unBIAS Module (VADER + RoBERTa + BART-MNLI + Dbias) | ✅ Done |
-| 4 | ClaimBuster Module (API + heuristic, DuckDuckGo, Google FC, NLI) | ✅ Done |
+| 3 | unBIAS Module (VADER + RoBERTa + BART-MNLI + Custom Flagging) | ✅ Done |
+| 4 | Claim Detection (Hybrid local: DistilBERT + BART-MNLI) | ✅ Done |
 | 5 | Aggregator (reliability formula, unit tests) | ✅ Done |
 | 6 | Backend API (FastAPI, 7 endpoints, async, cursor pagination) | ✅ Done |
 | 7 | Frontend (React 19, 4 pages, dark theme, Recharts) | ✅ Done |
@@ -34,8 +34,8 @@ IndiaGround scrapes Indian news from Inshorts, runs each article through a multi
 | **Frontend** | React, Vite, TailwindCSS | 19 / 8 / v4 |
 | **Frontend libs** | React Router, React Query, Recharts, Lucide | v7 / v5 / v2 |
 | **TypeScript** | TypeScript | 6.0 |
-| **NLP/ML** | spaCy, VADER, Transformers, Sentence-Transformers, Dbias | Latest |
-| **ML Models** | BART-MNLI, RoBERTa, all-MiniLM-L6-v2 | HuggingFace |
+| **NLP/ML** | spaCy, VADER, Transformers, Sentence-Transformers | Latest |
+| **ML Models** | BART-MNLI, RoBERTa, all-MiniLM-L6-v2, DistilBERT | HuggingFace |
 | **Scraping** | httpx (JSON API) | Latest |
 | **Package Mgmt** | pnpm (frontend), uv (backend) | 10 / 0.11+ |
 
@@ -73,13 +73,13 @@ IndiaGround scrapes Indian news from Inshorts, runs each article through a multi
 │     ├─ VADER (headline sentiment)          │
 │     ├─ RoBERTa (body sentiment)            │
 │     ├─ BART-MNLI (multi-label bias types)  │
-│     └─ Dbias (token-level flagging)        │
+│     └─ Native Smart-Flagging (token-level) │
 │                                            │
-│  3. ClaimBuster Module (WHAT is true)      │
-│     ├─ ClaimBuster API / heuristic fallback│
+│  3. Claim Detection (WHAT is true)         │
+│     ├─ Stage 1: DistilBERT Scorer (Fast)   │
+│     ├─ Stage 2: BART-MNLI Refinement       │
 │     ├─ DuckDuckGo evidence retrieval       │
-│     ├─ Google Fact Check Tools API         │
-│     └─ BART-MNLI NLI verification          │
+│     └─ Google Fact Check Tools API         │
 │                                            │
 │  4. Aggregator                             │
 │     └─ reliability = (1-bias)*0.40         │
@@ -566,15 +566,6 @@ These are pre-filled in `.env.example` and work with `docker compose up postgres
 
 **None of these are needed.** The platform works fully without them. They just enhance the fact-checking quality.
 
-#### `CLAIMBUSTER_API_KEY`
-
-| | |
-|---|---|
-| **What it does** | Sends article text to ClaimBuster's API to get per-sentence check-worthiness scores (0–1). Returns the most "claim-like" sentences. |
-| **Without it** | Uses a built-in **heuristic fallback** that detects claims by looking for: percentages, large numbers (crore/lakh/million), attribution words (according to, said, reported), superlatives, and trend words. Works well enough for a demo. |
-| **How to get it (free)** | 1. Go to [https://idir.uta.edu/claimbuster/](https://idir.uta.edu/claimbuster/) <br> 2. Click "Register" and create an account <br> 3. After login, your API key is shown on the dashboard <br> 4. Set `CLAIMBUSTER_API_KEY=your-key-here` in `.env` |
-| **Rate limit** | 100 requests/day on free tier. More than enough for a demo. |
-
 #### `GOOGLE_FACTCHECK_API_KEY`
 
 | | |
@@ -611,7 +602,7 @@ These are pre-filled in `.env.example` and work with `docker compose up postgres
 | **Scraping** | N/A | ✅ Works (JSON API) |
 | **Preprocessing** | N/A | ✅ Works (spaCy + langdetect + sentence-transformers) |
 | **Bias Detection** | N/A | ✅ Works (VADER + RoBERTa + BART-MNLI + Dbias — all local models) |
-| **Claim Extraction** | ClaimBuster API (better accuracy) | ✅ **Heuristic fallback** (pattern matching — good enough for demo) |
+| **Claim Extraction** | N/A | ✅ **Native AI Pipeline** (DistilBERT + BART-MNLI — specialized and highly accurate) |
 | **Evidence Retrieval** | SerpAPI (Google results) | ✅ **DuckDuckGo** (works, no key needed) |
 | **Fact-Check Lookup** | Google FC API (professional fact-checks) | ⚠️ **Skipped** (no existing fact-check links, but NLI verification still runs) |
 | **Claim Verification** | N/A | ✅ Works (BART-MNLI NLI — fully local) |
