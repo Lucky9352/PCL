@@ -1,8 +1,8 @@
-"""ClaimBuster module — factual claim detection and verification.
+"""Claim extraction and verification module.
 
-Hybrid approach:
-  1. ClaimBuster API for check-worthiness scoring (with graceful fallback)
-  2. DuckDuckGo for evidence retrieval
+Hybrid local-first approach:
+  1. Local Hybrid AI Pipeline (DistilBERT + BART-MNLI) for check-worthiness
+  2. DuckDuckGo & Google Fact Check for evidence retrieval
   3. NLI-based verification (facebook/bart-large-mnli)
   4. Source credibility scoring
   5. Combined trust score
@@ -46,92 +46,115 @@ def _get_nli_pipeline():
     return _nli_pipeline
 
 
+# Lazy-loaded Check-worthiness model
+_checkworthiness_pipeline = None
+
+
+def _get_checkworthiness_pipeline():
+    """Lazy-load specialized DistilBERT model for check-worthiness detection."""
+    global _checkworthiness_pipeline
+    if _checkworthiness_pipeline is None:
+        try:
+            from transformers import pipeline
+
+            settings = get_settings()
+            device_str = settings.resolved_device
+            device = -1
+            if device_str == "cuda":
+                device = 0
+
+            _checkworthiness_pipeline = pipeline(
+                "text-classification",
+                model="cognotron/distilbert-base-cased-check-worthiness",
+                device=device,
+            )
+            logger.info(f"Check-worthiness model loaded on: {device_str}")
+        except Exception as e:
+            logger.warning(f"Failed to load check-worthiness model: {e}")
+    return _checkworthiness_pipeline
+
+
 # ═══════════════════════════════════════════════════
-# ClaimBuster API Integration
+# Local Check-Worthiness Pipeline (Hybrid)
 # ═══════════════════════════════════════════════════
 
 
-async def get_checkworthy_claims_api(text: str) -> list[dict[str, Any]]:
-    """Query ClaimBuster API for check-worthiness scores.
+async def get_checkworthy_claims(text: str) -> list[dict[str, Any]]:
+    """Identify check-worthy claims using a local hybrid pipeline.
 
-    Falls back to heuristic-based extraction if API key is not set.
+    Stage 1: Fast ranking using a specialized transformer (DistilBERT).
+    Stage 2: High-precision refinement using zero-shot NLI (BART).
 
     Returns:
-        List of {"text": str, "score": float} sorted by score desc.
-    """
-    settings = get_settings()
-
-    if not settings.CLAIMBUSTER_API_KEY:
-        logger.info("ClaimBuster API key not set — using heuristic fallback")
-        return _heuristic_claim_extraction(text)
-
-    try:
-        url = "https://idir.uta.edu/claimbuster/api/v2/score/text/"
-        headers = {"x-api-key": settings.CLAIMBUSTER_API_KEY}
-        payload = {"input_text": text}
-
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.post(url, json=payload, headers=headers)
-            response.raise_for_status()
-
-        data = response.json()
-        results = data.get("results", [])
-
-        claims = [
-            {"text": r["text"], "score": r["score"]}
-            for r in sorted(results, key=lambda x: x["score"], reverse=True)
-            if r["score"] > 0.3  # Only check-worthy claims
-        ]
-
-        return claims[:5]  # Top 5 most check-worthy
-
-    except Exception as e:
-        logger.warning(f"ClaimBuster API failed: {e} — using heuristic fallback")
-        return _heuristic_claim_extraction(text)
-
-
-def _heuristic_claim_extraction(text: str) -> list[dict[str, Any]]:
-    """Heuristic fallback when ClaimBuster API is unavailable.
-
-    Uses NLP patterns to identify claim-like sentences.
+        List of {"text": str, "score": float} sorted by score.
     """
     import re
 
-    sentences = re.split(r"(?<=[.!?])\s+", text)
-    claims = []
+    # 1. Clean and split into sentences
+    sentences = [s.strip() for s in re.split(r"(?<=[.!?])\s+", text) if len(s.strip()) > 30]
+    if not sentences:
+        return []
 
-    # Patterns that indicate factual claims
-    claim_patterns = [
-        r"\b\d+\s*%",  # Percentages
-        r"\b\d+\s*(million|billion|crore|lakh)",  # Large numbers
-        r"\b(according to|reported|said|stated|claimed|announced)\b",  # Attribution
-        r"\b(first|largest|smallest|most|least|highest|lowest)\b",  # Superlatives
-        r"\b(is|are|was|were|has|have|had)\s+(not\s+)?(been\s+)?(a|the|an)\b",  # Definitional
-        r"\b(increased|decreased|grew|fell|rose|dropped)\b",  # Trends
-    ]
+    # Stage 1: Fast Transformer Scorer (DistilBERT)
+    pipe = _get_checkworthiness_pipeline()
+    candidates = []
 
-    for sentence in sentences:
-        sentence = sentence.strip()
-        if len(sentence) < 20:
-            continue
+    if pipe:
+        try:
+            # Batch processing candidates for speed
+            results = pipe(sentences, truncation=True, max_length=128)
+            for sentence, res in zip(sentences, results, strict=False):
+                # The model usually returns LABEL_1 for check-worthy
+                score = res["score"] if res["label"] == "LABEL_1" else 1.0 - res["score"]
+                if score > 0.4:  # Initial threshold
+                    candidates.append({"text": sentence, "s1_score": score})
+        except Exception as e:
+            logger.warning(f"Stage 1 check-worthiness failed: {e}")
+            # Fallback to simple keyword density if model fails
+            candidates = [{"text": s, "s1_score": 0.5} for s in sentences]
+    else:
+        candidates = [{"text": s, "s1_score": 0.5} for s in sentences]
 
-        score = 0.0
-        for pattern in claim_patterns:
-            if re.search(pattern, sentence, re.IGNORECASE):
-                score += 0.15
+    if not candidates:
+        return []
 
-        # Boost for sentences with named entities (proper nouns)
-        proper_nouns = len(re.findall(r"\b[A-Z][a-z]+\b", sentence))
-        score += min(proper_nouns * 0.05, 0.2)
+    # Sort and take top 8 for Stage 2 (BART-MNLI refinement)
+    candidates.sort(key=lambda x: x["s1_score"], reverse=True)
+    top_candidates = candidates[:8]
 
-        # Cap at 1.0
-        score = min(score, 1.0)
+    # Stage 2: Deep Refinement (BART-MNLI Zero-Shot)
+    nli = _get_nli_pipeline()
+    final_claims = []
 
-        if score > 0.25:
-            claims.append({"text": sentence, "score": round(score, 3)})
+    if nli:
+        hypothesis = "This sentence contains a factual claim that should be fact-checked."
+        for cand in top_candidates:
+            try:
+                res = nli(
+                    cand["text"],
+                    candidate_labels=["factual claim", "opinion/other"],
+                    hypothesis=hypothesis,
+                )
+                # Weighted score: 40% Stage 1, 60% Stage 2
+                s2_score = (
+                    res["scores"][0] if res["labels"][0] == "factual claim" else res["scores"][1]
+                )
+                combined_score = (cand["s1_score"] * 0.4) + (s2_score * 0.6)
 
-    claims.sort(key=lambda x: x["score"], reverse=True)
-    return claims[:5]
+                if combined_score > 0.5:
+                    final_claims.append({"text": cand["text"], "score": round(combined_score, 3)})
+            except Exception as e:
+                logger.warning(f"Stage 2 refinement failed for claim: {e}")
+                final_claims.append({"text": cand["text"], "score": cand["s1_score"]})
+    else:
+        # If NLI is not available, just use Stage 1 results
+        final_claims = [
+            {"text": c["text"], "score": round(c["s1_score"], 3)} for c in top_candidates
+        ]
+
+    # Sort final results and take top 5
+    final_claims.sort(key=lambda x: x["score"], reverse=True)
+    return final_claims[:5]
 
 
 # ═══════════════════════════════════════════════════
@@ -304,7 +327,7 @@ async def analyze_claims(
     full_text = f"{title}. {synopsis}"
 
     # Step 1: Extract check-worthy claims
-    raw_claims = await get_checkworthy_claims_api(full_text)
+    raw_claims = await get_checkworthy_claims(full_text)
 
     # Step 2: For each claim, retrieve evidence and verify
     verified_claims = []

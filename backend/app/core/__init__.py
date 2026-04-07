@@ -46,9 +46,6 @@ class Settings(BaseSettings):
     def cors_origins_list(self) -> list[str]:
         return [o.strip() for o in self.CORS_ORIGINS.split(",") if o.strip()]
 
-    # ── ClaimBuster ───────────────────────────────
-    CLAIMBUSTER_API_KEY: str = ""
-
     # ── Search APIs ───────────────────────────────
     SERPAPI_KEY: str = ""
     GOOGLE_FACTCHECK_API_KEY: str = ""

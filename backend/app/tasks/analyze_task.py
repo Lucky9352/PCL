@@ -132,7 +132,7 @@ def analyze_pending_articles(self):
                 session.add(bias_run)
 
                 # ── Step 4: Fact-check analysis ────
-                logger.info("  → Running fact-check analysis...")
+                logger.info("  → Running local hybrid fact-check analysis...")
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
                 factcheck_result = loop.run_until_complete(
@@ -143,7 +143,7 @@ def analyze_pending_articles(self):
                 # Log analysis run
                 factcheck_run = AnalysisRun(
                     article_id=article.id,
-                    model_name="claimbuster_hybrid",
+                    model_name="indiaground_hybrid_claim_detector",
                     model_version="0.1.0",
                     raw_output=factcheck_result,
                 )
