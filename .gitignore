@@ -42,3 +42,5 @@ backend/models_cache/
 celerybeat-schedule*
 celerybeat.pid
 *.pid
+
+1.txt

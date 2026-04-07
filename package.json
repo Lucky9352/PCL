@@ -4,6 +4,7 @@
   "packageManager": "pnpm@10.33.0",
   "scripts": {
     "dev:all": "concurrently -c \"cyan,magenta,green,yellow\" -n \"UI,API,WORKER,BEAT\" \"pnpm dev:frontend\" \"pnpm dev:backend\" \"pnpm dev:worker\" \"pnpm dev:beat\"",
+    "reset": "bash scripts/reset.sh",
     "dev:frontend": "pnpm --dir frontend dev",
     "dev:backend": "cd backend && uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000",
     "dev:worker": "cd backend && uv run celery -A app.core.celery_app worker -l info -c 2",

@@ -187,37 +187,75 @@ def classify_bias_types(text: str) -> list[dict[str, float]]:
 
 
 # ═══════════════════════════════════════════════════
-# Dbias — Token-Level Bias Detection
+# Token-Level Bias Detection (Custom Smart-Flagging)
 # ═══════════════════════════════════════════════════
+
+# Curated dictionary of common biased words in Indian/Global news and neutral suggestions
+BIASED_REPLACEMENTS = {
+    "slams": "criticizes",
+    "attacks": "critiques",
+    "radical": "fundamental",
+    "extreme": "significant",
+    "outrageous": "controversial",
+    "shocking": "unexpected",
+    "miracle": "significant development",
+    "disastrous": "unsuccessful",
+    "shameful": "criticized",
+    "propaganda": "information campaign",
+    "fake": "unverified",
+    "lies": "inaccurate statements",
+    "nonsense": "arguments",
+    "terror": "violence",
+    "brutal": "severe",
+    "savagely": "severely",
+    "cowardly": "unprovoked",
+    "heroic": "notable",
+    "brilliant": "effective",
+}
 
 
 def detect_biased_tokens(text: str) -> list[dict[str, str]]:
-    """Use Dbias to find biased words and suggest replacements.
+    """Identifies biased words and suggests neutral replacements.
+
+    Uses a combination of:
+    1. Curated biased-to-neutral dictionary.
+    2. VADER-based identification of highly polarized adjectives.
 
     Returns:
         List of {"word": str, "suggestion": str} dicts.
     """
-    try:
-        from Dbias.text_debiasing import debias_text
+    vader = _get_vader()
+    words = text.split()
+    flagged = []
+    seen = set()
 
-        result = debias_text(text)
-        if isinstance(result, dict) and "debiased_text" in result:
-            # Compare original vs debiased to find changed tokens
-            original_words = text.split()
-            debiased_words = result["debiased_text"].split()
+    for word in words:
+        # Clean word (no punctuation)
+        clean = word.strip(".,!?;:\"'()").lower()
 
-            flagged = []
-            for orig, deb in zip(original_words, debiased_words, strict=False):
-                if orig.lower() != deb.lower():
-                    flagged.append({"word": orig, "suggestion": deb})
+        if clean in seen:
+            continue
 
-            return flagged
-    except ImportError:
-        logger.warning("Dbias not installed — skipping token-level bias detection")
-    except Exception as e:
-        logger.warning(f"Dbias failed: {e}")
+        # 1. Check curated dictionary
+        if clean in BIASED_REPLACEMENTS:
+            flagged.append({"word": word, "suggestion": BIASED_REPLACEMENTS[clean]})
+            seen.add(clean)
+            continue
 
-    return []
+        # 2. Check for high polarity adjectives using VADER (if vader exists)
+        if vader:
+            # We only flag words that are intensely positive/negative (+/- 0.6)
+            scores = vader.polarity_scores(word)
+            compound = scores["compound"]
+
+            if abs(compound) > 0.6:
+                # Suggest a generic neutral version or just flag
+                suggestion = "notable" if compound > 0 else "concerning"
+
+                flagged.append({"word": word, "suggestion": suggestion})
+                seen.add(clean)
+
+    return flagged
 
 
 # ═══════════════════════════════════════════════════
