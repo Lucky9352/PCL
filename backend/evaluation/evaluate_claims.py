@@ -78,6 +78,7 @@ def evaluate_checkworthiness_on_clef(
     """
     import asyncio
 
+    from app.services.article_context import build_article_context
     from app.services.claimbuster import get_checkworthy_claims
 
     data = []
@@ -99,7 +100,8 @@ def evaluate_checkworthiness_on_clef(
     y_scores = []
 
     for i, item in enumerate(data):
-        claims = loop.run_until_complete(get_checkworthy_claims(item["text"]))
+        ctx = build_article_context(item["text"], "")
+        claims = loop.run_until_complete(get_checkworthy_claims(ctx.sentences))
         score = claims[0]["score"] if claims else 0.0
         y_true.append(item["label"])
         y_scores.append(score)

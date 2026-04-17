@@ -24,6 +24,7 @@ from typing import Any
 
 from app.core import get_settings
 from app.core.logging import logger
+from app.services.article_context import ArticleContext
 from app.utils.source_credibility import BIAS_NUMERIC, get_source_credibility
 
 # ═══════════════════════════════════════════════════
@@ -528,15 +529,15 @@ def estimate_political_lean(
 
 
 def analyze_bias(
-    title: str,
-    synopsis: str,
+    ctx: ArticleContext,
     source_name: str | None = None,
 ) -> dict[str, Any]:
     """Run full unBIAS analysis pipeline on an article.
 
     Args:
-        title: Article headline.
-        synopsis: Article body text.
+        ctx: Shared ArticleContext produced by build_article_context().
+             Contains pre-cleaned text, NLP features and word count so
+             this module does NOT repeat cleaning or sentence-splitting.
         source_name: Publisher name for political lean estimation.
 
     Returns:
@@ -560,11 +561,14 @@ def analyze_bias(
       - W_frame=0.30: Framing deviation captures structural bias beyond
         individual word choices.
     """
-    full_text = f"{title}. {synopsis}"
+
+    # ── Unpack shared context (no re-cleaning, no re-splitting) ──────────
+    full_text = ctx.full_text  # already cleaned once
+    word_count = ctx.word_count  # precomputed; avoids re-split below
 
     # ── 1. Sentiment ──────────────────────────────
-    headline_sentiment = analyze_sentiment_vader(title)
-    body_sentiment = analyze_sentiment_transformer(synopsis)
+    headline_sentiment = analyze_sentiment_vader(ctx.clean_title)
+    body_sentiment = analyze_sentiment_transformer(ctx.clean_synopsis)
 
     combined_score = headline_sentiment["score"] * 0.4 + body_sentiment["score"] * 0.6
     if combined_score >= 0.05:
@@ -594,7 +598,6 @@ def analyze_bias(
         avg_type_conf = sum(b["confidence"] for b in bias_types_raw) / len(bias_types_raw)
         bias_type_severity = (bias_type_severity + avg_type_conf) / 2.0
 
-    word_count = max(len(full_text.split()), 1)
     token_bias_density = min(len(flagged_tokens) / word_count * 10, 1.0)
 
     framing_deviation = framing_result.get("framing_deviation", 0.0)

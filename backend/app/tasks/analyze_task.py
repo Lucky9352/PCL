@@ -32,11 +32,11 @@ def analyze_pending_articles(self):
     """
     from app.db.models import AnalysisRun, Article
     from app.services.aggregator import aggregate_analysis
+    from app.services.article_context import build_article_context
     from app.services.claimbuster import analyze_claims
     from app.services.preprocessor import (
         check_semantic_duplicate,
         compute_embedding,
-        preprocess_article,
     )
     from app.services.story_cluster_sync import assign_article_to_cluster
     from app.services.unbias import analyze_bias
@@ -88,14 +88,14 @@ def analyze_pending_articles(self):
             try:
                 # ── Step 1: Preprocess ─────────────
                 logger.info(f"Preprocessing: {article.title[:60]}...")
-                prep = preprocess_article(article.title, article.synopsis)
+                ctx = build_article_context(article.title, article.synopsis)
 
-                article.entities = prep["entities"]
-                article.noun_phrases = prep["noun_phrases"]
-                article.language = prep["language"]
+                article.entities = ctx.entities
+                article.noun_phrases = ctx.noun_phrases
+                article.language = ctx.language
 
                 # Skip non-English articles
-                if prep["language"] != "en" and prep["language"] != "unknown":
+                if ctx.language != "en" and ctx.language != "unknown":
                     article.status = "preprocessed"
                     article.analysis_status = "skipped_non_english"
                     session.commit()
@@ -121,7 +121,7 @@ def analyze_pending_articles(self):
 
                 # ── Step 3: Bias analysis ──────────
                 logger.info("  → Running bias analysis...")
-                bias_result = analyze_bias(article.title, article.synopsis, article.source_name)
+                bias_result = analyze_bias(ctx, article.source_name)
 
                 # Log analysis run
                 bias_run = AnalysisRun(
@@ -136,9 +136,7 @@ def analyze_pending_articles(self):
                 logger.info("  → Running local hybrid fact-check analysis...")
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
-                factcheck_result = loop.run_until_complete(
-                    analyze_claims(article.title, article.synopsis, article.source_name)
-                )
+                factcheck_result = loop.run_until_complete(analyze_claims(ctx, article.source_name))
                 loop.close()
 
                 # Log analysis run

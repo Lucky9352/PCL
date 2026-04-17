@@ -55,6 +55,7 @@ def evaluate_on_babe(dataset: list[dict], sample_size: int | None = None) -> dic
     Returns:
         Dict with accuracy, precision, recall, F1, confusion matrix.
     """
+    from app.services.article_context import build_article_context
     from app.services.unbias import analyze_bias
 
     if sample_size and len(dataset) > sample_size:
@@ -70,7 +71,8 @@ def evaluate_on_babe(dataset: list[dict], sample_size: int | None = None) -> dic
         text = item["text"]
         true_label = item["label"]
 
-        result = analyze_bias(title=text, synopsis="")
+        ctx = build_article_context(text, "")
+        result = analyze_bias(ctx)
         pred_score = result["bias_score"]
         pred_label = 1 if pred_score > 0.5 else 0
 

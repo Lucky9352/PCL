@@ -25,6 +25,7 @@ import httpx
 
 from app.core import get_settings
 from app.core.logging import logger
+from app.services.article_context import ArticleContext
 from app.utils.source_credibility import get_source_credibility
 
 # ═══════════════════════════════════════════════════
@@ -76,8 +77,14 @@ def _get_checkworthiness_pipeline():
 # ═══════════════════════════════════════════════════
 
 
-async def get_checkworthy_claims(text: str) -> list[dict[str, Any]]:
+async def get_checkworthy_claims(
+    sentences: list[str],
+) -> list[dict[str, Any]]:
     """Identify check-worthy claims using BART-MNLI zero-shot classification.
+
+    Accepts pre-split sentences from ArticleContext (ctx.sentences) so the
+    inline re.split that previously duplicated the preprocessor's work is
+    removed entirely.
 
     Two-pass approach using a single model (facebook/bart-large-mnli):
 
@@ -95,9 +102,8 @@ async def get_checkworthy_claims(text: str) -> list[dict[str, Any]]:
 
     Returns top 5 claims sorted by combined score.
     """
-    import re
-
-    sentences = [s.strip() for s in re.split(r"(?<=[.!?])\s+", text) if len(s.strip()) > 30]
+    # Filter short sentences (same rule as the old inline re.split)
+    sentences = [s.strip() for s in sentences if len(s.strip()) > 30]
     if not sentences:
         return []
 
@@ -393,24 +399,25 @@ def compute_trust_score(
 
 
 async def analyze_claims(
-    title: str,
-    synopsis: str,
+    ctx: ArticleContext,
     source_name: str | None = None,
 ) -> dict[str, Any]:
     """Run full ClaimBuster pipeline: extract → retrieve → verify → score.
 
     Args:
-        title: Article headline.
-        synopsis: Article body text.
+        ctx: Shared ArticleContext produced by build_article_context().
+             ctx.sentences replaces the inline re.split that previously
+             duplicated the preprocessor's sentence-splitting work.
+             ctx.full_text is used for logging only — all text access goes
+             through the context so cleaning is never repeated.
         source_name: Publisher name for credibility lookup.
 
     Returns:
         Complete fact-check analysis dict with decomposed trust score.
     """
-    full_text = f"{title}. {synopsis}"
 
-    # Step 1: Extract check-worthy claims
-    raw_claims = await get_checkworthy_claims(full_text)
+    # Step 1: Extract check-worthy claims from pre-split sentences
+    raw_claims = await get_checkworthy_claims(ctx.sentences)
 
     # Step 2: For each claim, retrieve evidence and verify
     verified_claims = []
